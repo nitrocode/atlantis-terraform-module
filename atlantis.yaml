@@ -1,0 +1,25 @@
+# https://www.runatlantis.io/docs/server-configuration.html#repo-config-json
+repos:
+  - id: /.*/
+    # allow repo level custom workflows
+    allow_custom_workflows: true
+    # allow repo level configs to override the following
+    allowed_overrides:
+      - apply_requirements
+      - workflow
+    apply_requirements:
+      - approved
+    workflow: default
+
+workflows:
+  default:
+    apply:
+      steps:
+        - run: if [ `cat /home/atlantis/users | grep -i "^$USERNAME$" | wc -l` != 1 ]; then echo "Not in users file" && exit 1; else echo "Authenticated"; fi
+        - apply
+    plan:
+      steps:
+        - init
+        - run: echo 'Running tflint...' && tflint
+        - run: echo 'Running checkov...' && checkov -d .
+        - plan
