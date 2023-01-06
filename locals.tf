@@ -24,7 +24,7 @@ locals {
   # read from yaml file, decode into json, encode into a string
   repo_config_json = jsonencode(
     yamldecode(
-      file("${path.module}/atlantis.yaml")
+      file("${path.module}/repos.yaml")
     )
   )
 }
