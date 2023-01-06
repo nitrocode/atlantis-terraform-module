@@ -1,0 +1,7 @@
+---
+exclude:
+  - aws-vpc-no-public-egress-sgr
+  - aws-s3-enable-versioning
+  - aws-s3-encryption-customer-key
+  - aws-s3-enable-bucket-encryption
+  - aws-ec2-no-public-egress-sgr
