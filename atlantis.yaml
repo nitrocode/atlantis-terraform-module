@@ -10,9 +10,89 @@ repos:
     apply_requirements:
       - approved
     workflow: default
+    post_workflow_hooks:
+      # Integration from https://github.com/infracost/infracost-atlantis/blob/master/examples/combined-infracost-comment/README.md
+      - run: |
+          # post_workflow_hooks are executed after the repo workflow has run.
+          # This enables you to post an Infracost comment with the combined cost output
+          # from all your projects. However, post_workflow_hooks are also triggered when
+          # an apply occurs. In order to stop commenting on PRs twice we need to check
+          # if the Infracost output directory created in our 'plan' stage exists before continuing.
+          if [ ! -d "/tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM" ]; then
+            exit 0
+          fi
+
+          # Choose the commenting behavior, 'new' is a good default:
+          # new: Create a new cost estimate comment on every run of Atlantis for each project.
+          # update: Create a single comment and update it. The "quietest" option.
+          # hide-and-new: Minimize previous comments and create a new one.
+          # delete-and-new: Delete previous comments and create a new one.
+          infracost comment github --repo $BASE_REPO_OWNER/$BASE_REPO_NAME \
+                                   --pull-request $PULL_NUM \
+                                   --path /tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM/'*'-infracost.json \
+                                   --github-token $GITHUB_TOKEN \
+                                   --behavior update
+
+          # remove the Infracost output directory so that `infracost comment` is not
+          # triggered on an `atlantis apply`
+          rm -rf /tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM
 
 workflows:
   default:
+    plan:
+      steps:
+        - env:
+            name: INFRACOST_OUTPUT
+            command: 'echo "/tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM/$WORKSPACE-${REPO_REL_DIR//\//-}-infracost.json"'
+        - env:
+            name: SHOW_FILE
+            command: 'echo "/tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM/$WORKSPACE-${REPO_REL_DIR//\//-}-showfile.json"'
+        - env:
+            name: TF_VAR_terraform_repository
+            command: 'echo "github.com/${HEAD_REPO_OWNER}/${HEAD_REPO_NAME}"'
+        - env:
+            name: TF_VAR_terraform_repository_dir
+            command: 'echo "${REPO_REL_DIR}"'
+        - env:
+            name: TF_VAR_terraform_version
+            command: 'echo "${ATLANTIS_TERRAFORM_VERSION}"'
+        - init
+        - run: "echo 'terraform$ATLANTIS_TERRAFORM_VERSION --version' && terraform$ATLANTIS_TERRAFORM_VERSION --version"
+        - run: "echo 'tfsec --version' && tfsec --version"
+        #- run: "tfsec --concise-output --config-file /etc/tfsec_config.yaml -m CRITICAL --no-color ."
+        - run: "tfsec --concise-output -m CRITICAL --no-color ."
+        - run: echo 'Running tflint...' && tflint
+        - run: echo 'Running checkov...' && checkov -d .
+        - plan
+        - run: |
+            # Show file only exists for >= 0.12
+            if [[ "$(echo $ATLANTIS_TERRAFORM_VERSION | cut -d'.' -f1,2)" == "0.11" ]]; then
+              exit 0
+            fi
+
+            if [ ! -d "/tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM" ]; then
+              mkdir -p /tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM
+            fi
+
+            terraform$ATLANTIS_TERRAFORM_VERSION show -json $PLANFILE > $SHOW_FILE
+            echo 'tf-summarize -v' && tf-summarize -v
+            cat $SHOW_FILE | tf-summarize || true
+        # Integration from https://github.com/infracost/infracost-atlantis/blob/master/examples/combined-infracost-comment/README.md
+        # Run Infracost breakdown and save to a tempfile, namespaced by this project, PR, workspace and dir
+        - run: |
+            # Show file only exists for >= 0.12
+            if [[ "$(echo $ATLANTIS_TERRAFORM_VERSION | cut -d'.' -f1,2)" == "0.11" ]]; then
+              exit 0
+            fi
+
+            infracost breakdown --path=$SHOW_FILE \
+                                --format=json \
+                                --log-level=info \
+                                --out-file=$INFRACOST_OUTPUT \
+                                --project-name=$REPO_REL_DIR
+
+  # custom workflow for authentication
+  authenticated:
     apply:
       steps:
         - run: if [ `cat /home/atlantis/users | grep -i "^$USERNAME$" | wc -l` != 1 ]; then echo "Not in users file" && exit 1; else echo "Authenticated"; fi
