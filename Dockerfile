@@ -98,7 +98,7 @@ COPY .tflint.hcl /home/atlantis
 COPY tfsec_config.yaml /etc/tfsec_config.yaml
 
 # for custom authorized users
-COPY users /home/atlantis
+COPY *users /home/atlantis
 
 # For atlantis github app. This can be replaced with an environment variable.
 COPY atlantis-app-key.pem /home/atlantis
