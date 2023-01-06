@@ -94,6 +94,8 @@ RUN curl -sL https://github.com/terraform-linters/tflint/releases/download/v${TF
 
 # for tflint
 COPY .tflint.hcl /home/atlantis
+# for tfsec
+COPY tfsec_config.yaml /etc/tfsec_config.yaml
 
 # for custom authorized users
 COPY users /home/atlantis
