@@ -1,4 +1,4 @@
-ARG ATLANTIS_VERSION=v0.22.1
+ARG ATLANTIS_VERSION=v0.22.3
 FROM ghcr.io/runatlantis/atlantis:${ATLANTIS_VERSION}
 
 WORKDIR /home/atlantis
@@ -29,6 +29,9 @@ RUN apk del gcompat || true \
 ARG AWSCLI_VERSION=2.7.19
 ENV AWSCLI_VERSION=${AWSCLI_VERSION}
 
+WORKDIR /
+COPY awscliv2.public.gpg.key .
+
 RUN curl -sL https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${AWSCLI_VERSION}.zip -o awscliv2.zip \
     && curl -o awscliv2.sig https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${AWSCLI_VERSION}.zip.sig \
     && gpg --import awscliv2.public.gpg.key \
@@ -49,7 +52,7 @@ RUN curl -sL https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${AWSCLI_VERSI
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # https://github.com/aquasecurity/tfsec/releases
-ARG TFSEC_VERSION=1.27.6
+ARG TFSEC_VERSION=1.28.1
 ENV TFSEC_VERSION=${TFSEC_VERSION}
 
 RUN curl -sL https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-linux-amd64 -o tfsec-linux-amd64 \
@@ -60,7 +63,7 @@ RUN curl -sL https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VE
     && chmod +x /usr/local/bin/tfsec
 
 # https://github.com/dineshba/tf-summarize/releases
-ARG TFSUMMARIZE_VERSION=0.2.3
+ARG TFSUMMARIZE_VERSION=0.2.6
 ENV TFSUMMARIZE_VERSION=${TFSUMMARIZE_VERSION}
 
 RUN curl -sL https://github.com/dineshba/tf-summarize/releases/download/v${TFSUMMARIZE_VERSION}/tf-summarize_linux_amd64.zip -o tf-summarize_linux_amd64.zip \
@@ -72,7 +75,7 @@ RUN curl -sL https://github.com/dineshba/tf-summarize/releases/download/v${TFSUM
     && chmod +x /usr/local/bin/tf-summarize
 
 # https://github.com/infracost/infracost
-ARG INFRACOST_VERSION=0.10.14
+ARG INFRACOST_VERSION=0.10.16
 ENV INFRACOST_VERSION=${INFRACOST_VERSION}
 
 RUN \
@@ -83,6 +86,16 @@ RUN \
   && tar xvfz infracost-linux-amd64.tar.gz \
   && rm infracost-linux-amd64.tar.gz \
   && mv infracost-linux-amd64 /usr/bin/infracost
+
+# https://github.com/tmccombs/hcl2json
+ARG HCL2JSON_VERSION=0.3.6
+ENV HCL2JSON_VERSION=${HCL2JSON_VERSION}
+RUN \
+  curl -sL "https://github.com/tmccombs/hcl2json/releases/download/v${HCL2JSON_VERSION}/hcl2json_linux_amd64" -o hcl2json_linux_amd64 \
+  && chmod +x hcl2json_linux_amd64 \
+  && mv hcl2json_linux_amd64 /usr/bin/hcl2json
+
+COPY policies/ /opt/policies
 
 # install tflint
 ARG TFLINT_VERSION=0.24.1
