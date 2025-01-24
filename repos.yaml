@@ -163,6 +163,9 @@ workflows:
         - *env_default_tags_repository
         - *env_default_tags_repository_dir
         - *env_append_user_agent
+        # if authenticating from users file
+        # - run: if [ `cat /home/atlantis/users | grep -i "^$USERNAME$" | wc -l` != 1 ]; then echo "Not in users file" && exit 1; else echo "Authenticated"; fi
+        # - apply
         - run: |
             # Checking this prior to the apply
             nochanges=false
