@@ -24,7 +24,31 @@ workflows:
         - env:
             name: TF_VAR_terraform_version
             command: 'echo "${ATLANTIS_TERRAFORM_VERSION}"'
+        # These env vars TF_AWS_DEFAULT_TAGS_ will work for aws provider 5.62.0+
+        # https://github.com/hashicorp/terraform-provider-aws/releases/tag/v5.62.0
+        - &env_default_tags_repository
+          env:
+            name: "TF_AWS_DEFAULT_TAGS_org:repository"
+            command: 'echo "github.com/${HEAD_REPO_OWNER}/${HEAD_REPO_NAME}"'
+        - &env_default_tags_repository_dir
+          env:
+            name: "TF_AWS_DEFAULT_TAGS_org:repository_dir"
+            command: 'echo "${REPO_REL_DIR}"'
+        # Add PR information to cloudtrail by appending the user agent
+        - &env_append_user_agent
+          env:
+            name: TF_APPEND_USER_AGENT
+            command: 'echo "pull:${PULL_URL//[^a-zA-Z0-9_@\.:\/-]/} author:${PULL_AUTHOR//[^a-zA-Z0-9-]/} actor:${USER_NAME//[^a-zA-Z0-9-]/}"'
+        # https://developer.hashicorp.com/terraform/cli/config/environment-variables#tf_plugin_cache_dir
+        - env:
+            name: TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE
+            command: 'echo true'
+        # - env:
+        #     name: TF_PLUGIN_CACHE_DIR
+        #     command: 'echo "$HOME/.terraform.d/plugin-cache"'
 
+        # - run: |
+        #     mkdir -p $TF_PLUGIN_CACHE_DIR
         # This will clean up the terraform init output
         - run:
             command: terraform$ATLANTIS_TERRAFORM_VERSION init -input=false
