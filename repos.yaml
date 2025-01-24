@@ -2,14 +2,48 @@
 repos:
   - id: /.*/
     # allow repo level custom workflows
-    allow_custom_workflows: true
+    # allow_custom_workflows: false
     # allow repo level configs to override the following
-    allowed_overrides:
-      - apply_requirements
-      - workflow
+    # allowed_overrides:
+    #   - apply_requirements
+    #   - workflow
     apply_requirements:
+      - mergeable
       - approved
     workflow: terraform
+
+    pre_workflow_hooks:
+      - description: Download policies
+        commands: plan
+        run: |
+          # This will create dir /atlantis/policy/terraform-code
+          cd /atlantis
+          conftest pull "git::https://$GITHUB_TOKEN@github.com/<org>/<repo>//policies/"
+
+    post_workflow_hooks:
+      - description: Clean up old files
+        commands: plan
+        run: |
+          last_accessed_weeks="2"
+          dir_to_clean="$ATLANTIS_DATA_DIR/plugin-cache/registry.terraform.io"
+          if [ -d "$ATLANTIS_DATA_DIR" ]; then
+            echo "Clean up old files in directory $dir_to_clean not accessed in the last $last_accessed_weeks weeks"
+            find \
+              "$dir_to_clean" \
+              -atime +$(($last_accessed_weeks*7)) \
+              -type f \
+              -delete \
+              -print
+            # clean up empty dirs
+            find \
+              "$dir_to_clean" \
+              -mindepth 1 \
+              -type d \
+              -empty \
+              -delete
+          else
+            echo "The directory $dir_to_clean does not exist so there isn't anything to clean up"
+          fi
 
 workflows:
   terraform:
@@ -49,6 +83,7 @@ workflows:
 
         # - run: |
         #     mkdir -p $TF_PLUGIN_CACHE_DIR
+
         # This will clean up the terraform init output
         - run:
             command: terraform$ATLANTIS_TERRAFORM_VERSION init -input=false
@@ -79,39 +114,49 @@ workflows:
                 echo 'conftest --version' && conftest --version
                 for f in *.tf; do (cat "${f}"; echo); done | hcl2json | conftest test --all-namespaces -p /atlantis/policy/terraform-code -
             fi
+
         - run: "echo 'terraform$ATLANTIS_TERRAFORM_VERSION --version' && terraform$ATLANTIS_TERRAFORM_VERSION --version"
         - run: "echo 'tfsec --version' && tfsec --version"
-        #- run: "tfsec --concise-output --config-file /etc/tfsec_config.yaml -m CRITICAL --no-color ."
+        # TODO: replace tfsec with trivy
+        # use if adding a global tfsec file
+        # - run: "tfsec --concise-output --config-file /etc/tfsec_config.yaml -m CRITICAL --no-color ."
         - run: "tfsec --concise-output -m CRITICAL --no-color ."
         - run: echo 'Running tflint...' && tflint
         - run: echo 'Running checkov...' && checkov -d .
-        - plan
+
+        # plan
+        - run: |
+            export TF_APPEND_USER_AGENT="$TF_APPEND_USER_AGENT stage:plan workspace:${WORKSPACE}"
+            # check if workspace and workspace.tfvars file exists, then append the argument
+            TFVARS_ARG=""
+            if [[ ! -z "${WORKSPACE}" ]] && [[ -f "${WORKSPACE}.tfvars" ]]; then
+              echo "Found ${WORKSPACE}.tfvars and appending it to the terraform plan command"
+              TFVARS_ARG="-var-file ${WORKSPACE}.tfvars"
+            fi
+            # COMMENT_ARGS need to be appended to support things like "-destroy": https://www.runatlantis.io/docs/custom-workflows#terragrunt
+            terraform$ATLANTIS_TERRAFORM_VERSION plan -input=false $TFVARS_ARG $(printf '%s' $COMMENT_ARGS | sed 's/,/ /' | tr -d '\\') -refresh -out $PLANFILE
+
+        # Cannot use "show" step for terraform 0.11 so we custom implement it in the next step
+        # - show
         - run: |
             # Show file only exists for >= 0.12
             if [[ "$(echo $ATLANTIS_TERRAFORM_VERSION | cut -d'.' -f1,2)" == "0.11" ]]; then
+              echo "Skipping tf-summarize since it requires tf12 or higher"
               exit 0
             fi
 
-            if [ ! -d "/tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM" ]; then
-              mkdir -p /tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM
-            fi
+            # if [ ! -d "/tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM" ]; then
+            #   mkdir -p /tmp/$BASE_REPO_OWNER-$BASE_REPO_NAME-$PULL_NUM
+            # fi
 
-            terraform$ATLANTIS_TERRAFORM_VERSION show -json $PLANFILE > $SHOW_FILE
+            terraform$ATLANTIS_TERRAFORM_VERSION show -json $PLANFILE > $SHOWFILE
             echo 'tf-summarize -v' && tf-summarize -v
-            cat $SHOW_FILE | tf-summarize || true
-        # Integration from https://github.com/infracost/infracost-atlantis/blob/master/examples/combined-infracost-comment/README.md
-        # Run Infracost breakdown and save to a tempfile, namespaced by this project, PR, workspace and dir
-        - run: |
-            # Show file only exists for >= 0.12
-            if [[ "$(echo $ATLANTIS_TERRAFORM_VERSION | cut -d'.' -f1,2)" == "0.11" ]]; then
-              exit 0
-            fi
+            cat $SHOWFILE | tf-summarize || true
 
-            infracost breakdown --path=$SHOW_FILE \
-                                --format=json \
-                                --log-level=info \
-                                --out-file=$INFRACOST_OUTPUT \
-                                --project-name=$REPO_REL_DIR
+    # policy_check:
+    #   steps:
+    #     - policy_check:
+    #         extra_args: ["-p /atlantis/policy/terraform-plan", "--all-namespaces"]
 
   # custom workflow for authentication
   authenticated:
