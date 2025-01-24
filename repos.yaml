@@ -57,13 +57,36 @@ workflows:
             name: TF_VAR_terraform_version
             command: 'echo "${ATLANTIS_TERRAFORM_VERSION}"'
 
+        # This will clean up the terraform init output
+        - run:
+            command: terraform$ATLANTIS_TERRAFORM_VERSION init -input=false
+            output: hide
+
+        # verify terraform fmt has run without running format
+        - run: |
+            terraform$ATLANTIS_TERRAFORM_VERSION fmt -check -list=false
+            exit_status=$?
+            if [ $exit_status -gt 0 ]; then
+              echo "Please run 'terraform fmt' in '${REPO_REL_DIR}'"
+              exit $exit_status
+            fi
+
+        # use workspace if set
+        - run: |
+            if [[ ! -z "${WORKSPACE}" ]]; then
+              terraform$ATLANTIS_TERRAFORM_VERSION workspace select ${WORKSPACE} || terraform$ATLANTIS_TERRAFORM_VERSION workspace new ${WORKSPACE}
+            fi
+            echo "Using ${WORKSPACE} workspace"
+
         # run conftest against terraform hcl code before init
         # The below will separate each terraform file with a new line in order to allow hcl2json to read it properly
         # If "hcl2json < *.tf" or "cat *.tf | hcl2json" is used, it will return "Missing newline after block definition"
         - run: |
-            for f in *.tf; do (cat "${f}"; echo); done | hcl2json | conftest test --all-namespaces -p /opt/policies -
-
-        - init
+            # check for terraform files
+            if [ "$(ls | grep '\.tf$')" ]; then
+                echo 'conftest --version' && conftest --version
+                for f in *.tf; do (cat "${f}"; echo); done | hcl2json | conftest test --all-namespaces -p /atlantis/policy/terraform-code -
+            fi
         - run: "echo 'terraform$ATLANTIS_TERRAFORM_VERSION --version' && terraform$ATLANTIS_TERRAFORM_VERSION --version"
         - run: "echo 'tfsec --version' && tfsec --version"
         #- run: "tfsec --concise-output --config-file /etc/tfsec_config.yaml -m CRITICAL --no-color ."
