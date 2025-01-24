@@ -153,20 +153,38 @@ workflows:
             echo 'tf-summarize -v' && tf-summarize -v
             cat $SHOWFILE | tf-summarize || true
 
-    # policy_check:
-    #   steps:
-    #     - policy_check:
-    #         extra_args: ["-p /atlantis/policy/terraform-plan", "--all-namespaces"]
+    policy_check:
+      steps:
+        - policy_check:
+            extra_args: ["-p /atlantis/policy/terraform-plan", "--all-namespaces"]
 
-  # custom workflow for authentication
-  authenticated:
     apply:
       steps:
-        - run: if [ `cat /home/atlantis/users | grep -i "^$USERNAME$" | wc -l` != 1 ]; then echo "Not in users file" && exit 1; else echo "Authenticated"; fi
-        - apply
-    plan:
-      steps:
-        - init
-        - run: echo 'Running tflint...' && tflint
-        - run: echo 'Running checkov...' && checkov -d .
-        - plan
+        - *env_default_tags_repository
+        - *env_default_tags_repository_dir
+        - *env_append_user_agent
+        - run: |
+            # Checking this prior to the apply
+            nochanges=false
+            if [[ $(terraform$ATLANTIS_TERRAFORM_VERSION show $PLANFILE -no-color | grep -c '^No changes.') -gt 0 ]]; then
+                nochanges=true
+            fi
+
+            # apply changes
+            export TF_APPEND_USER_AGENT="$TF_APPEND_USER_AGENT stage:apply workspace:${WORKSPACE}"
+            terraform$ATLANTIS_TERRAFORM_VERSION apply -no-color $PLANFILE
+            retVal=$?
+            if [[ $retVal -ne 0 ]]; then
+                exit $retVal
+            fi
+
+policies:
+  owners:
+    users:
+      - <snip>
+    teams:
+      - <snip>
+  policy_sets:
+    - name: policies
+      path: /atlantis/policy/terraform-plan/
+      source: local
