@@ -10,6 +10,22 @@ test_allow_correct_backend if {
 	}]}}]}
 }
 
+test_allow_correct_backend_non_zero_index if {
+	allow with input as {"terraform": [{}, {"backend": {"s3": [{
+		"bucket": "bucket",
+		"key": "key",
+		"region": "us-east-1",
+	}]}}]}
+}
+
+test_deny_incorrect_region if {
+	not allow with input as {"terraform": [{"backend": {"s3": [{
+		"bucket": "bucket",
+		"key": "key",
+		"region": "us-east-2",
+	}]}}]}
+}
+
 test_deny_missing_region if {
 	not allow with input as {"terraform": [{"backend": {"s3": [{
 		"bucket": "bucket",
